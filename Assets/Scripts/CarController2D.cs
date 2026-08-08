@@ -13,7 +13,8 @@ public class CarController2D : MonoBehaviour
     [Header("Drive")]
     [SerializeField] private WheelJoint2D wheelLeft;
     [SerializeField] private WheelJoint2D wheelRight;
-    [SerializeField] private float driveForce = 25f;
+    [SerializeField] private float driveMotorSpeed = 900f;
+    [SerializeField] private float driveMotorTorque = 150f;
     [SerializeField] private float maxHorizontalSpeed = 8f;
     [SerializeField] private Gear currentGear = Gear.Park;
     [SerializeField] private float brakeForce = 12f;
@@ -25,13 +26,24 @@ public class CarController2D : MonoBehaviour
     [SerializeField] private float groundCheckDistance = 0.65f;
     [SerializeField] private LayerMask groundMask = ~0;
 
-    [Header("Wheel visuals")]
-    [SerializeField] private float wheelRadius = 0.5f;
-    [SerializeField] private float wheelSpinAcceleration = 3600f;
+    [Header("Air stability")]
+    [SerializeField] private float airUprightTorque = 8f;
+    [SerializeField] private float airAngularDamping = 4f;
+    [SerializeField] private float airMaxTorque = 20f;
+
+    [Header("Ground contact")]
+    [SerializeField] private float groundStickForce = 20f;
 
     private Rigidbody2D body;
     private Rigidbody2D leftWheelBody;
     private Rigidbody2D rightWheelBody;
+    private Transform playerRoot;
+    private Vector3 bodyLocalPosition;
+    private Vector3 leftWheelLocalPosition;
+    private Vector3 rightWheelLocalPosition;
+    private float bodyLocalRotation;
+    private float leftWheelLocalRotation;
+    private float rightWheelLocalRotation;
     private Gear pendingGear = Gear.Park;
     private bool jumpRequested;
 
@@ -39,6 +51,7 @@ public class CarController2D : MonoBehaviour
     {
         body = GetComponent<Rigidbody2D>();
         body.angularDamping = bodyAngularDamping;
+        playerRoot = transform.root;
 
         wheelLeft ??= transform.root.Find("WheelLeft")?.GetComponent<WheelJoint2D>();
         wheelRight ??= transform.root.Find("WheelRight")?.GetComponent<WheelJoint2D>();
@@ -46,14 +59,65 @@ public class CarController2D : MonoBehaviour
         leftWheelBody = wheelLeft != null ? wheelLeft.GetComponent<Rigidbody2D>() : null;
         rightWheelBody = wheelRight != null ? wheelRight.GetComponent<Rigidbody2D>() : null;
 
-        if (wheelRadius <= 0f)
-        {
-            CircleCollider2D wheelCollider = wheelLeft != null
-                ? wheelLeft.GetComponent<CircleCollider2D>()
-                : null;
-            if (wheelCollider != null)
-                wheelRadius = wheelCollider.radius * Mathf.Abs(wheelCollider.transform.lossyScale.x);
-        }
+        bodyLocalPosition = body.transform.localPosition;
+        leftWheelLocalPosition = leftWheelBody != null ? leftWheelBody.transform.localPosition : Vector3.zero;
+        rightWheelLocalPosition = rightWheelBody != null ? rightWheelBody.transform.localPosition : Vector3.zero;
+        bodyLocalRotation = body.transform.localEulerAngles.z;
+        leftWheelLocalRotation = leftWheelBody != null ? leftWheelBody.transform.localEulerAngles.z : 0f;
+        rightWheelLocalRotation = rightWheelBody != null ? rightWheelBody.transform.localEulerAngles.z : 0f;
+
+        ApplyWheelGrip(wheelLeft);
+        ApplyWheelGrip(wheelRight);
+    }
+
+    public void Respawn(Transform respawnPoint)
+    {
+        if (respawnPoint == null)
+            return;
+
+        playerRoot.SetPositionAndRotation(respawnPoint.position, respawnPoint.rotation);
+        SetRigidbodyPose(body, respawnPoint, bodyLocalPosition, bodyLocalRotation);
+        SetRigidbodyPose(leftWheelBody, respawnPoint, leftWheelLocalPosition, leftWheelLocalRotation);
+        SetRigidbodyPose(rightWheelBody, respawnPoint, rightWheelLocalPosition, rightWheelLocalRotation);
+        Physics2D.SyncTransforms();
+        ResetPhysics();
+    }
+
+    public void ResetPhysics()
+    {
+        currentGear = Gear.Park;
+        pendingGear = Gear.Park;
+        jumpRequested = false;
+
+        ResetRigidbody(body);
+        ResetRigidbody(leftWheelBody);
+        ResetRigidbody(rightWheelBody);
+
+        SetWheelMotor(wheelLeft, 0f, false);
+        SetWheelMotor(wheelRight, 0f, false);
+    }
+
+    private static void ResetRigidbody(Rigidbody2D rigidbody)
+    {
+        if (rigidbody == null)
+            return;
+
+        rigidbody.linearVelocity = Vector2.zero;
+        rigidbody.angularVelocity = 0f;
+        rigidbody.Sleep();
+    }
+
+    private static void SetRigidbodyPose(
+        Rigidbody2D rigidbody,
+        Transform poseRoot,
+        Vector3 localPosition,
+        float localRotation)
+    {
+        if (rigidbody == null)
+            return;
+
+        rigidbody.position = poseRoot.TransformPoint(localPosition);
+        rigidbody.rotation = poseRoot.eulerAngles.z + localRotation;
     }
 
     private void Update()
@@ -62,6 +126,12 @@ public class CarController2D : MonoBehaviour
 
         if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
             jumpRequested = true;
+
+        if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame) 
+        {
+            GameState.Instance?.AdvanceDays(1);
+            EventManager.OnSegmentRestart?.Invoke(this);
+        }
     }
 
     private void FixedUpdate()
@@ -69,19 +139,23 @@ public class CarController2D : MonoBehaviour
         float throttle = ReadThrottle();
         bool braking = IsBraking();
 
-        body.AddForce(Vector2.right * throttle * driveForce, ForceMode2D.Force);
+        DriveWheels(throttle);
         if (braking)
             ApplyBrake();
 
         FinishGearChangeWhenStopped();
         ClampHorizontalSpeed();
-        SpinWheel(leftWheelBody);
-        SpinWheel(rightWheelBody);
+
+        bool grounded = IsGrounded();
+        if (grounded)
+            body.AddForce(Vector2.down * groundStickForce, ForceMode2D.Force);
+        else
+            StabilizeInAir();
 
         if (jumpRequested)
         {
             jumpRequested = false;
-            if (IsGrounded())
+            if (grounded)
                 body.AddForce(Vector2.up * jumpImpulse, ForceMode2D.Impulse);
         }
     }
@@ -91,10 +165,8 @@ public class CarController2D : MonoBehaviour
         if (Keyboard.current == null)
             return;
 
-        bool forwardPressed = Keyboard.current.rightArrowKey.wasPressedThisFrame ||
-                              Keyboard.current.dKey.wasPressedThisFrame;
-        bool reversePressed = Keyboard.current.leftArrowKey.wasPressedThisFrame ||
-                              Keyboard.current.aKey.wasPressedThisFrame;
+        bool forwardPressed = ForwardPressedThisFrame();
+        bool reversePressed = ReversePressedThisFrame();
 
         if (forwardPressed == reversePressed)
             return;
@@ -117,12 +189,9 @@ public class CarController2D : MonoBehaviour
         if (Keyboard.current == null || currentGear == Gear.Park)
             return 0f;
 
-        bool forwardHeld = Keyboard.current.rightArrowKey.isPressed || Keyboard.current.dKey.isPressed;
-        bool reverseHeld = Keyboard.current.leftArrowKey.isPressed || Keyboard.current.aKey.isPressed;
-
-        if (currentGear == Gear.Forward && forwardHeld)
+        if (currentGear == Gear.Forward && IsForwardHeld())
             return 1f;
-        if (currentGear == Gear.Reverse && reverseHeld)
+        if (currentGear == Gear.Reverse && IsReverseHeld())
             return -1f;
 
         return 0f;
@@ -136,6 +205,43 @@ public class CarController2D : MonoBehaviour
         body.linearVelocity = velocity;
     }
 
+    private void DriveWheels(float throttle)
+    {
+        float motorSpeed = throttle * driveMotorSpeed;
+        bool enabled = Mathf.Abs(throttle) > 0.01f;
+        SetWheelMotor(wheelLeft, motorSpeed, enabled);
+        SetWheelMotor(wheelRight, motorSpeed, enabled);
+    }
+
+    private void SetWheelMotor(WheelJoint2D wheel, float speed, bool enabled)
+    {
+        if (wheel == null)
+            return;
+
+        JointMotor2D motor = wheel.motor;
+        motor.motorSpeed = speed;
+        motor.maxMotorTorque = driveMotorTorque;
+        wheel.motor = motor;
+        wheel.useMotor = enabled;
+    }
+
+    private void ApplyWheelGrip(WheelJoint2D wheel)
+    {
+        if (wheel == null)
+            return;
+
+        CircleCollider2D collider = wheel.GetComponent<CircleCollider2D>();
+        if (collider == null)
+            return;
+
+        PhysicsMaterial2D grip = new PhysicsMaterial2D("Car Wheel Grip")
+        {
+            friction = 1.5f,
+            bounciness = 0f
+        };
+        collider.sharedMaterial = grip;
+    }
+
     private bool IsBraking()
     {
         if (currentGear == Gear.Park || pendingGear != Gear.Park)
@@ -144,10 +250,7 @@ public class CarController2D : MonoBehaviour
         if (Keyboard.current == null)
             return false;
 
-        bool forwardHeld = Keyboard.current.rightArrowKey.isPressed || Keyboard.current.dKey.isPressed;
-        bool reverseHeld = Keyboard.current.leftArrowKey.isPressed || Keyboard.current.aKey.isPressed;
-
-        return currentGear == Gear.Forward ? reverseHeld : forwardHeld;
+        return currentGear == Gear.Forward ? IsReverseHeld() : IsForwardHeld();
     }
 
     private void ApplyBrake()
@@ -174,25 +277,40 @@ public class CarController2D : MonoBehaviour
         if (Keyboard.current == null)
             return false;
 
-        if (gear == Gear.Forward)
-            return Keyboard.current.rightArrowKey.isPressed || Keyboard.current.dKey.isPressed;
-        if (gear == Gear.Reverse)
-            return Keyboard.current.leftArrowKey.isPressed || Keyboard.current.aKey.isPressed;
-
-        return false;
+        return gear == Gear.Forward ? IsForwardHeld() : IsReverseHeld();
     }
 
-    private void SpinWheel(Rigidbody2D wheel)
+    private static bool IsForwardHeld()
     {
-        if (wheel == null || wheelRadius <= 0f)
-            return;
+        return Keyboard.current != null &&
+               (Keyboard.current.rightArrowKey.isPressed || Keyboard.current.dKey.isPressed);
+    }
 
-        // v = r * angularVelocity. Unity reports angular velocity in degrees/second.
-        float targetSpeed = -(body.linearVelocity.x / wheelRadius) * Mathf.Rad2Deg;
-        wheel.angularVelocity = Mathf.MoveTowards(
-            wheel.angularVelocity,
-            targetSpeed,
-            wheelSpinAcceleration * Time.fixedDeltaTime);
+    private static bool IsReverseHeld()
+    {
+        return Keyboard.current != null &&
+               (Keyboard.current.leftArrowKey.isPressed || Keyboard.current.aKey.isPressed);
+    }
+
+    private static bool ForwardPressedThisFrame()
+    {
+        return Keyboard.current != null &&
+               (Keyboard.current.rightArrowKey.wasPressedThisFrame ||
+                Keyboard.current.dKey.wasPressedThisFrame);
+    }
+
+    private static bool ReversePressedThisFrame()
+    {
+        return Keyboard.current != null &&
+               (Keyboard.current.leftArrowKey.wasPressedThisFrame ||
+                Keyboard.current.aKey.wasPressedThisFrame);
+    }
+
+    private void StabilizeInAir()
+    {
+        float angleError = Mathf.DeltaAngle(body.rotation, 0f);
+        float torque = angleError * airUprightTorque - body.angularVelocity * airAngularDamping;
+        body.AddTorque(Mathf.Clamp(torque, -airMaxTorque, airMaxTorque), ForceMode2D.Force);
     }
 
     private bool IsGrounded()
@@ -227,5 +345,13 @@ public class CarController2D : MonoBehaviour
     {
         if (wheel != null)
             Gizmos.DrawLine(wheel.transform.position, wheel.transform.position + Vector3.down * groundCheckDistance);
+    }
+
+    private void OnTriggerEnter2D(Collider2D other){
+        if (other.GetComponent<FailTrigger>() != null)
+        {
+            GameState.Instance?.AdvanceDays(2);
+            EventManager.OnSegmentRestart?.Invoke(this);
+        }
     }
 }
