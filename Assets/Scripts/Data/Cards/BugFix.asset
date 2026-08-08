@@ -12,9 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7f6e8d4c2b1a49e6a3d5c8b0f2e7a914, type: 3}
   m_Name: BugFix
   m_EditorClassIdentifier: Assembly-CSharp::Card
-  cardName: "\u0424\u0438\u043A\u0441 \u0411\u0430\u0433\u043E\u0432"
-  hypeDelta: -2
-  techDelta: 7
-  dayDelta: 1
+  cardName: "\u0418\u0441\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435 \u0431\u0430\u0433\u043E\u0432"
+  hypeDelta: 0
+  techDelta: -3
+  dayDelta: 2
   preferredSegmentType: 
   segmentPrefab: {fileID: 684265009865443089, guid: 50ed1c1dc0923ee488b19471515730a0, type: 3}

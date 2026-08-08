@@ -24,6 +24,7 @@ public class CarController2D : MonoBehaviour
     [Header("Jump")]
     [SerializeField] private float jumpImpulse = 5f;
     [SerializeField] private float groundCheckDistance = 0.65f;
+    [SerializeField] private float groundCheckRadius = 0.45f;
     [SerializeField] private LayerMask groundMask = ~0;
 
     [Header("Air stability")]
@@ -156,7 +157,12 @@ public class CarController2D : MonoBehaviour
         {
             jumpRequested = false;
             if (grounded)
-                body.AddForce(Vector2.up * jumpImpulse, ForceMode2D.Impulse);
+            {
+                Vector2 velocity = body.linearVelocity;
+                velocity.y = jumpImpulse;
+                body.linearVelocity = velocity;
+                body.WakeUp();
+            }
         }
     }
 
@@ -323,15 +329,21 @@ public class CarController2D : MonoBehaviour
         if (wheel == null)
             return false;
 
-        RaycastHit2D hit = Physics2D.Raycast(
+        Collider2D wheelCollider = wheel.GetComponent<Collider2D>();
+        if (wheelCollider != null && wheelCollider.IsTouchingLayers(groundMask))
+            return true;
+
+        RaycastHit2D hit = Physics2D.CircleCast(
             wheel.transform.position,
+            groundCheckRadius,
             Vector2.down,
             groundCheckDistance,
             groundMask);
 
         return hit.collider != null &&
                hit.collider.transform != wheel.transform &&
-               hit.rigidbody != body;
+               hit.rigidbody != body &&
+               hit.rigidbody != wheel.GetComponent<Rigidbody2D>();
     }
 
     private void OnDrawGizmosSelected()

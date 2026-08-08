@@ -12,9 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7f6e8d4c2b1a49e6a3d5c8b0f2e7a914, type: 3}
   m_Name: Fishing
   m_EditorClassIdentifier: Assembly-CSharp::Card
-  cardName: "\u0420\u044B\u0431\u0430\u043B\u043A\u043E"
-  hypeDelta: 10
-  techDelta: 8
+  cardName: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043C\u0435\u0445\u0430\u043D\u0438\u043A\u0443
+    \u0440\u044B\u0431\u0430\u043B\u043A\u0438"
+  hypeDelta: 3
+  techDelta: 1
   dayDelta: 2
   preferredSegmentType: 
   segmentPrefab: {fileID: 684265009865443089, guid: cd83eb5ad809b514f8bf33fdc01321ff, type: 3}
