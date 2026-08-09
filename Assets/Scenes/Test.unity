@@ -1172,15 +1172,15 @@ MonoBehaviour:
   target: {fileID: 1408099104}
   findCarAutomatically: 0
   baseOffset: {x: 0, y: 1.25, z: -10}
-  positionSmoothTime: 0.18
-  maxFollowSpeed: 50
-  lookAheadDistance: 2.2
-  lookAheadSmoothTime: 0.25
-  tiltAmount: 2
-  tiltSmoothTime: 0.32
+  positionSmoothTime: 0.1
+  maxFollowSpeed: 65
+  lookAheadDistance: 1
+  lookAheadSmoothTime: 0.2
+  tiltAmount: 1.5
+  tiltSmoothTime: 0.24
   speedForMaxZoom: 6
   zoomSmoothTime: 0.2
-  zoomOutAmount: 1.1
+  zoomOutAmount: 0.6
 --- !u!1 &529148260
 GameObject:
   m_ObjectHideFlags: 0
@@ -1618,7 +1618,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 01612a454668b6241880fc93a093fab6, type: 2}
   - {fileID: 11400000, guid: 49eeb958d3b84b145bbdb47179e40625, type: 2}
   choicesPerSegment: 3
-  initialSegmentPrefab: {fileID: 684265009865443089, guid: cd83eb5ad809b514f8bf33fdc01321ff, type: 3}
+  initialSegmentPrefab: {fileID: 9102486562831225453, guid: 9278d22f49cd2cd478b2918f18c399d4, type: 3}
   segmentParent: {fileID: 0}
   startWithFirstSegment: 1
   playerCar: {fileID: 0}
@@ -1761,7 +1761,7 @@ Rigidbody2D:
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
-  m_Mass: 100
+  m_Mass: 50
   m_LinearDamping: 0
   m_AngularDamping: 0.05
   m_GravityScale: 1
@@ -1836,9 +1836,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   wheelLeft: {fileID: 529148264}
   wheelRight: {fileID: 362703806}
-  driveMotorSpeed: 900
-  driveMotorTorque: 200
-  maxHorizontalSpeed: 10
+  driveMotorSpeed: 1200
+  driveMotorTorque: 300
+  maxHorizontalSpeed: 14
   currentGear: 0
   brakeForce: 20
   gearChangeSpeedThreshold: 0.05
@@ -1851,8 +1851,14 @@ MonoBehaviour:
     m_Bits: 4294967295
   airUprightTorque: 8
   airAngularDamping: 4
-  airMaxTorque: 20
+  airMaxTorque: 80
+  airRotationSpeed: 180
+  airRotationAcceleration: 600
+  airHorizontalForce: 5
+  airGravityScale: 0.7
   groundStickForce: 40
+  overturnedAngle: 120
+  crashDelay: 3
 --- !u!1 &1033493684
 GameObject:
   m_ObjectHideFlags: 0
@@ -2548,7 +2554,7 @@ Transform:
   m_GameObject: {fileID: 1408099103}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 4.18, y: 3.19, z: 0}
+  m_LocalPosition: {x: 3.4, y: 1.66, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

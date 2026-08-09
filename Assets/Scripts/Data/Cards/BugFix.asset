@@ -17,4 +17,4 @@ MonoBehaviour:
   techDelta: -3
   dayDelta: 2
   preferredSegmentType: 
-  segmentPrefab: {fileID: 684265009865443089, guid: 50ed1c1dc0923ee488b19471515730a0, type: 3}
+  segmentPrefab: {fileID: 684265009865443089, guid: cd83eb5ad809b514f8bf33fdc01321ff, type: 3}

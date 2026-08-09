@@ -31,11 +31,20 @@ public class CarController2D : MonoBehaviour
     [SerializeField] private float airUprightTorque = 8f;
     [SerializeField] private float airAngularDamping = 4f;
     [SerializeField] private float airMaxTorque = 20f;
+    [SerializeField] private float airRotationSpeed = 180f;
+    [SerializeField] private float airRotationAcceleration = 600f;
+    [SerializeField] private float airHorizontalForce = 5f;
+    [SerializeField, Range(0.1f, 1f)] private float airGravityScale = 0.7f;
 
     [Header("Ground contact")]
     [SerializeField] private float groundStickForce = 20f;
 
+    [Header("Crash detection")]
+    [SerializeField] private float overturnedAngle = 120f;
+    [SerializeField] private float crashDelay = 3f;
+
     private Rigidbody2D body;
+    private Collider2D bodyCollider;
     private Rigidbody2D leftWheelBody;
     private Rigidbody2D rightWheelBody;
     private Transform playerRoot;
@@ -45,13 +54,18 @@ public class CarController2D : MonoBehaviour
     private float bodyLocalRotation;
     private float leftWheelLocalRotation;
     private float rightWheelLocalRotation;
+    private float normalGravityScale;
     private Gear pendingGear = Gear.Park;
     private bool jumpRequested;
+    private float overturnedTime;
+    private bool crashLogged;
 
     private void Awake()
     {
         body = GetComponent<Rigidbody2D>();
+        bodyCollider = GetComponent<Collider2D>();
         body.angularDamping = bodyAngularDamping;
+        normalGravityScale = body.gravityScale;
         playerRoot = transform.root;
 
         wheelLeft ??= transform.root.Find("WheelLeft")?.GetComponent<WheelJoint2D>();
@@ -89,6 +103,8 @@ public class CarController2D : MonoBehaviour
         currentGear = Gear.Park;
         pendingGear = Gear.Park;
         jumpRequested = false;
+        overturnedTime = 0f;
+        crashLogged = false;
 
         ResetRigidbody(body);
         ResetRigidbody(leftWheelBody);
@@ -96,6 +112,30 @@ public class CarController2D : MonoBehaviour
 
         SetWheelMotor(wheelLeft, 0f, false);
         SetWheelMotor(wheelRight, 0f, false);
+    }
+
+    /// <summary>
+    /// Gives the complete car assembly a deterministic launch velocity.
+    /// Keeping the wheels in sync prevents their joints from fighting the pad.
+    /// </summary>
+    public void LaunchFromJumpPad(Vector2 launchVelocity)
+    {
+        SetLaunchVelocity(body, launchVelocity);
+        SetLaunchVelocity(leftWheelBody, launchVelocity);
+        SetLaunchVelocity(rightWheelBody, launchVelocity);
+
+        body.WakeUp();
+        leftWheelBody?.WakeUp();
+        rightWheelBody?.WakeUp();
+    }
+
+    private static void SetLaunchVelocity(Rigidbody2D rigidbody, Vector2 launchVelocity)
+    {
+        if (rigidbody == null)
+            return;
+
+        rigidbody.linearVelocity = launchVelocity;
+        rigidbody.angularVelocity = 0f;
     }
 
     private static void ResetRigidbody(Rigidbody2D rigidbody)
@@ -148,14 +188,21 @@ public class CarController2D : MonoBehaviour
         ClampHorizontalSpeed();
 
         bool grounded = IsGrounded();
+        body.gravityScale = grounded ? normalGravityScale : airGravityScale;
+
         if (grounded)
             body.AddForce(Vector2.down * groundStickForce, ForceMode2D.Force);
         else
-            StabilizeInAir();
+        {
+            float airInput = ReadAirInput();
+            body.AddForce(Vector2.right * airInput * airHorizontalForce, ForceMode2D.Force);
+            StabilizeInAir(airInput);
+        }
 
         if (jumpRequested)
         {
-            jumpRequested = false;
+        jumpRequested = false;
+        body.gravityScale = normalGravityScale;
             if (grounded)
             {
                 Vector2 velocity = body.linearVelocity;
@@ -164,6 +211,8 @@ public class CarController2D : MonoBehaviour
                 body.WakeUp();
             }
         }
+
+        UpdateCrashDetection();
     }
 
     private void UpdateGear()
@@ -312,11 +361,49 @@ public class CarController2D : MonoBehaviour
                 Keyboard.current.aKey.wasPressedThisFrame);
     }
 
-    private void StabilizeInAir()
+    private float ReadAirInput()
     {
+        return (IsForwardHeld() ? 1f : 0f) - (IsReverseHeld() ? 1f : 0f);
+    }
+
+    private void StabilizeInAir(float input)
+    {
+        float torque;
+
+        if (Mathf.Abs(input) > 0.01f)
+        {
+            float targetAngularVelocity = -input * airRotationSpeed;
+            body.angularVelocity = Mathf.MoveTowards(
+                body.angularVelocity,
+                targetAngularVelocity,
+                airRotationAcceleration * Time.fixedDeltaTime);
+            return;
+        }
+
         float angleError = Mathf.DeltaAngle(body.rotation, 0f);
-        float torque = angleError * airUprightTorque - body.angularVelocity * airAngularDamping;
+        torque = angleError * airUprightTorque - body.angularVelocity * airAngularDamping;
+
         body.AddTorque(Mathf.Clamp(torque, -airMaxTorque, airMaxTorque), ForceMode2D.Force);
+    }
+
+    private void UpdateCrashDetection()
+    {
+        bool overturned = Mathf.Abs(Mathf.DeltaAngle(body.rotation, 0f)) >= overturnedAngle;
+        bool touchingGround = bodyCollider != null && bodyCollider.IsTouchingLayers(groundMask);
+
+        if (!overturned || !touchingGround)
+        {
+            overturnedTime = 0f;
+            crashLogged = false;
+            return;
+        }
+
+        overturnedTime += Time.fixedDeltaTime;
+        if (!crashLogged && overturnedTime >= crashDelay)
+        {
+            crashLogged = true;
+            Debug.Log("Crashed", this);
+        }
     }
 
     private bool IsGrounded()
